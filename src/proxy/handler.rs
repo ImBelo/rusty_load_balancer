@@ -29,11 +29,16 @@ impl ProxyHandler {
             }
         };
 
+        self.backend_pool.increment_connections(&backend).await;
+
         info!("Selected backend: {}", backend.url);
 
         match forward_request(req, &backend).await {
             Ok(resp) => Ok(modify_response(resp)),
-            Err(e) => Ok(handle_proxy_error(e)),
+            Err(e) => {
+                self.backend_pool.decrement_connections(&backend).await;
+                Ok(handle_proxy_error(e))
+            }
         }
     }
 }

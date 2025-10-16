@@ -72,5 +72,26 @@ impl BackendPool {
             _ => self.round_robin_select(&healthy).await,
         }
     }
+      pub async fn increment_connections(&self, backend: &Backend) {
+        let mut counts = self.connections_counts.write().await;
+        if let Some(count) = counts.get_mut(backend) {
+            *count += 1;
+        } else {
+            counts.insert(Arc::new(backend.clone()), 1);
+                
+        }
+    }
+
+    pub async fn decrement_connections(&self, backend: &Backend) {
+        let mut counts = self.connections_counts.write().await;
+        if let Some(count) = counts.get_mut(backend) {
+            *count = count.saturating_sub(1); // Evita underflow
+        }
+    }
+
+    pub async fn get_connection_count(&self, backend: &Backend) -> u32 {
+        let counts = self.connections_counts.read().await;
+        counts.get(backend).copied().unwrap_or(0)
+    }
 
 }
