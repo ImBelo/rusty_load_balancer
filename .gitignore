@@ -1,1 +1,26 @@
-/target
+# Rust
+/target/
+**/*.rs.bk
+
+# Log e file temporanei  
+*.log
+/tmp/backend*/
+/test_*
+
+# File di sistema
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ambiente
+.env
+.local
+
+# Backup
+*.backup
+*.orig
