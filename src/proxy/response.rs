@@ -6,7 +6,7 @@ pub fn handle_proxy_error(error: anyhow::Error) -> Response<hyper::Body> {
 
     Response::builder()
         .status(StatusCode::BAD_GATEWAY)
-        .body(hyper::Body::from(format!("Bad Gateway: {}", error)))
+        .body(hyper::Body::from(format!("Bad Gateway: {error}")))
         .unwrap()
 }
 

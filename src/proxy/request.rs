@@ -1,5 +1,5 @@
 use hyper::{Client, Request, Response};
-use tracing::{info, error};
+use tracing::{info};
 use anyhow::{Result, Context};
 
 pub async fn forward_request(
@@ -45,7 +45,7 @@ fn prepare_backend_uri(original_uri: &hyper::Uri, backend_url: &str) -> String {
     if path_and_query.is_empty() {
         backend_url.to_string()
     } else {
-        format!("{}/{}", backend_url, path_and_query)
+        format!("{backend_url}/{path_and_query}")
     }
 }
 

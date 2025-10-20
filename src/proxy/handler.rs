@@ -21,7 +21,7 @@ impl ProxyHandler {
     pub async fn handle_request(&self, req: Request<hyper::Body>) -> Result<Response<hyper::Body>, Infallible> {
         info!("Incoming request: {} {}", req.method(), req.uri());
 
-        let backend = match self.backend_pool.select_backend().await {
+        let backend = match self.backend_pool.select_and_increment().await {
             Some(backend) => backend,
             None => {
                 error!("No healthy backends available");
@@ -29,17 +29,22 @@ impl ProxyHandler {
             }
         };
 
-        self.backend_pool.increment_connections(&backend).await;
+        println!("📈 INCREMENTED: {} (now: {})", backend.url, self.backend_pool.get_connection_count(&backend).await);
 
         info!("Selected backend: {}", backend.url);
 
-        match forward_request(req, &backend).await {
-            Ok(resp) => Ok(modify_response(resp)),
-            Err(e) => {
-                self.backend_pool.decrement_connections(&backend).await;
-                Ok(handle_proxy_error(e))
-            }
+        if backend.url ==  "http://127.0.0.1:8081" {
+            backend.simulate_delay().await;
         }
+
+        let forward = match forward_request(req, &backend).await {
+            Ok(resp) => Ok(modify_response(resp)),
+            Err(e) => Ok(handle_proxy_error(e))
+        };
+        self.backend_pool.decrement_connections(&backend).await;
+        println!("📉 DECREMENTED: {} (now: {})", backend.url, self.backend_pool.get_connection_count(&backend).await);
+        forward
+
     }
 }
 

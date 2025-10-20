@@ -11,14 +11,21 @@ impl BackendPool {
     }
 
     pub async fn least_connections_select(&self, healthy: &[(Backend, BackendStatus)]) -> Option<Backend> {
-        let connection_counts = self.connections_counts.read().await;
-        healthy.iter()
-        .filter_map(|(backend, _)| {
-            let count = connection_counts.get(backend)?;
-            Some((backend, count))
-        })
-        .min_by(|(_, a), (_, b)| a.cmp(b))
-        .map(|(backend, _)| backend.clone())  // Clone di Arc (economico)
+        let counts = self.connections_counts.read().await;
+
+        // Trova il backend con meno connessioni
+        let selected = healthy.iter()
+            .min_by_key(|(backend, _)| {
+                counts.get(backend)
+                    .map(|atomic| atomic.load(std::sync::atomic::Ordering::Relaxed))
+                    .unwrap_or(0)
+            })?
+            .0.clone();
+
+        // INCREMENTA le connessioni per il backend selezionato
+        drop(counts);  // Rilascia il read lock
+
+        Some(selected)
     }
 
     pub async fn weighted_round_robin_select(&self, healthy: &[(Backend, BackendStatus)]) -> Option<Backend> {

@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use std::hash::Hasher;
 use std::hash::Hash;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Backend {
@@ -40,6 +41,10 @@ impl Eq for Backend {}
 impl Backend {
     pub fn new(url: String, name: String, weight: u32) -> Self {
         Self { url, name, weight }
+    }
+    pub async fn simulate_delay(&self) {
+        println!("⏳ Backend {}: simulando ritardo di 5s", self.url);
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 
 }

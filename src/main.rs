@@ -10,7 +10,7 @@ async fn main() -> Result<()> {
 
     info!("Starting Load Balancer...");
 
-    // Parse CLI arguments and load config
+    // Parse CLI e carica config 
     let config = match Config::from_file("config/config.yaml"){
         Ok(config) => config,
         Err(error) => {
