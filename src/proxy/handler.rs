@@ -22,16 +22,16 @@ impl ProxyHandler {
         info!("Incoming request: {} {}", req.method(), req.uri());
 
         let backend = match self.backend_pool.select_and_increment().await {
-            Some(backend) => backend,
+            Some(backend) => {
+                info!("Selected backend: {}", backend.url);
+                println!("INCREMENTED: {} (now: {})", backend.url, self.backend_pool.get_connection_count(&backend).await);
+                backend
+            },
             None => {
                 error!("No healthy backends available");
                 return Ok(no_healthy_backends());
             }
         };
-
-        println!("📈 INCREMENTED: {} (now: {})", backend.url, self.backend_pool.get_connection_count(&backend).await);
-
-        info!("Selected backend: {}", backend.url);
 
         if backend.url ==  "http://127.0.0.1:8081" {
             backend.simulate_delay().await;
@@ -42,7 +42,7 @@ impl ProxyHandler {
             Err(e) => Ok(handle_proxy_error(e))
         };
         self.backend_pool.decrement_connections(&backend).await;
-        println!("📉 DECREMENTED: {} (now: {})", backend.url, self.backend_pool.get_connection_count(&backend).await);
+        println!("DECREMENTED: {} (now: {})", backend.url, self.backend_pool.get_connection_count(&backend).await);
         forward
 
     }

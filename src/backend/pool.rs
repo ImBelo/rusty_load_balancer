@@ -64,7 +64,7 @@ impl BackendPool {
             return None;
         }
 
-        // 1. PRIMA seleziona il backend (senza lock)
+
         let selected = match self.strategy {
             LoadBalancingStrategy::RoundRobin => self.round_robin_select(&healthy).await,
             LoadBalancingStrategy::LeastConnections => self.least_connections_select(&healthy).await,
@@ -72,7 +72,6 @@ impl BackendPool {
             LoadBalancingStrategy::Random => self.random_select(&healthy),
         }?;
 
-        // 2. POI incrementa le connessioni (con lock)
         let mut counts_guard = self.connections_counts.write().await;
         let arc_backend = Arc::new(selected.clone());
         let entry = counts_guard.entry(arc_backend).or_insert_with(|| AtomicU32::new(0));

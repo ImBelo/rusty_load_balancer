@@ -3,6 +3,7 @@ use super::server::BackendStatus;
 use reqwest::Client;
 use std::time::Duration;
 use tracing::{info, warn};
+use crate::backend::Backend;
 
 pub struct HealthCheck {
     pool: BackendPool,
@@ -40,26 +41,50 @@ impl HealthCheck {
 
     async fn check_all_backends(&self) {
         let backends = self.pool.backends.load();
-        
-        for (index, backend) in backends.iter().enumerate() {
-            let status = self.check_backend(backend).await;
-            self.pool.update_backend_status(index, status).await;
 
-            match status {
-                BackendStatus::Healthy => info!("Backend {} ({}) is healthy", backend.name, backend.url),
-                BackendStatus::Unhealthy => warn!("Backend {} ({}) is unhealthy", backend.name, backend.url),
-                BackendStatus::Unknown => warn!("Backend {} ({}) status unknown", backend.name, backend.url),
+        let mut handles = Vec::new();
+
+        // Spawn all health check tasks
+        for (index, backend) in backends.iter().enumerate() {
+            let client = self.client.clone();
+            let backend = backend.clone();
+
+            let handle = tokio::spawn(async move {
+                let status = Self::check_single_backend(&client, &backend).await;
+                (index, backend, status)
+            });
+
+            handles.push(handle);
+        }
+    
+        for handle in handles {
+            let pool = self.pool.clone();
+            match handle.await {
+                Ok((index, backend, status)) => {
+                    pool.update_backend_status(index, status).await;
+
+                    match status {
+                        BackendStatus::Healthy => info!("Backend {} ({}) is healthy", backend.name, backend.url),
+                        BackendStatus::Unhealthy => warn!("Backend {} ({}) is unhealthy", backend.name, backend.url),
+                        BackendStatus::Unknown => warn!("Backend {} ({}) status unknown", backend.name, backend.url),
+                    }
+                }
+                Err(e) => {
+                    warn!("Health check task failed: {}", e);
+                }
             }
         }
     }
 
-    async fn check_backend(&self, backend: &super::server::Backend) -> BackendStatus {
+    // Helper function that doesn't borrow self
+    async fn check_single_backend(client: &Client, backend: &Backend) -> BackendStatus {
         let health_url = format!("{}/", backend.url);
-        
-        match self.client.get(&health_url).send().await {
+
+        match client.get(&health_url).send().await {
             Ok(response) if response.status().is_success() => BackendStatus::Healthy,
             Ok(_) => BackendStatus::Unhealthy,
             Err(_) => BackendStatus::Unhealthy,
         }
     }
+    
 }
