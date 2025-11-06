@@ -10,6 +10,7 @@ use tracing::{info, error};
 pub struct LoadBalancer {
     config: Config,
     backend_pool: BackendPool,
+    load_balancer_url: String,
 }
 
 impl LoadBalancer {
@@ -26,6 +27,9 @@ impl LoadBalancer {
             })
             .collect();
 
+        let load_balancer_url = format!("http://{}:{}",config.host.clone(),config.port.clone());
+
+
         let strategy = match config.lb_strategy.as_str() {
             "round_robin" => LoadBalancingStrategy::RoundRobin,
             "random" => LoadBalancingStrategy::Random,
@@ -39,6 +43,7 @@ impl LoadBalancer {
         Ok(Self {
             config,
             backend_pool,
+            load_balancer_url,
         })
     }
 
@@ -55,6 +60,7 @@ impl LoadBalancer {
         let health_check = HealthCheck::new(
             self.backend_pool.clone(),
             self.config.health_check_interval,
+            self.load_balancer_url.clone(),
         );
 
         let _handle = health_check.start().await;

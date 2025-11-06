@@ -9,10 +9,11 @@ pub struct HealthCheck {
     pool: BackendPool,
     interval_secs: u64,
     client: Client,
+    load_balancer_url: String,
 }
 
 impl HealthCheck {
-    pub fn new(pool: BackendPool, interval_secs: u64) -> Self {
+    pub fn new(pool: BackendPool, interval_secs: u64, load_balancer_url: String) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(3))
             .build()
@@ -22,6 +23,7 @@ impl HealthCheck {
             pool,
             interval_secs,
             client,
+            load_balancer_url,
         }
     }
 
@@ -44,13 +46,13 @@ impl HealthCheck {
 
         let mut handles = Vec::new();
 
-        // Spawn all health check tasks
         for (index, backend) in backends.iter().enumerate() {
             let client = self.client.clone();
             let backend = backend.clone();
+            let url = self.load_balancer_url.clone();
 
             let handle = tokio::spawn(async move {
-                let status = Self::check_single_backend(&client, &backend).await;
+                let status = Self::check_single_backend(&client, &backend, url).await;
                 (index, backend, status)
             });
 
@@ -76,12 +78,8 @@ impl HealthCheck {
         }
     }
 
-    async fn check_single_backend(client: &Client, backend: &Backend) -> BackendStatus {
-        // Use the load balancer URL instead of backend URL directly
-        let load_balancer_url = "http://127.0.0.1:3000";
-
-        // Add a special header or path to identify health checks
-        let health_url = format!("{}/health/{}", load_balancer_url, backend.name);
+    async fn check_single_backend(client: &Client, backend: &Backend,load_balancer_url: String) -> BackendStatus {
+        let health_url = format!("{}/health/{}",load_balancer_url, backend.name);
 
         match client.get(&health_url).send().await {
             Ok(response) if response.status().is_success() => BackendStatus::Healthy,

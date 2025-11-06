@@ -32,12 +32,12 @@ impl ProxyHandler {
             return self.handle_health_check(req).await;
         }
         // Richiesta normale
-        //info!("Incoming request: {} {}", req.method(), req.uri());
+        info!("Incoming request: {} {}", req.method(), req.uri());
 
         // Prendi il backend e incrementa le connessioni nel pool
         let backend = match self.backend_pool.select_and_increment().await {
             Some(backend) => {
-               // info!("Selected backend: {}", backend.url);
+                info!("Selected backend: {}", backend.url);
                // println!("INCREMENTED: {} (now: {})", backend.url, self.backend_pool.get_connection_count(&backend).await);
                 backend
             },
@@ -47,11 +47,9 @@ impl ProxyHandler {
             }
         };
         // Hardcoded backend-1 1 secondo di risposta per testare algoritmo di least-connection
-        /*
         if backend.url ==  "http://127.0.0.1:8081" {
             backend.simulate_delay().await;
         }
-        */
         // Fai il forward della richiesta e aggiungi header e in caso compremi
         let forward = match forward_request(req, &backend, &self.http_client).await {
             Ok(resp) => resp,

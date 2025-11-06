@@ -73,8 +73,8 @@ impl BackendPool {
         }?;
 
         let mut counts_guard = self.connections_counts.write().await;
-        //println!("Current counts: {:?}", 
-        //counts_guard.iter().map(|(k, v)| (k.url.clone(), v.load(Ordering::Relaxed))).collect::<Vec<_>>());
+        /*println!(" Current counts: {:?}", 
+        counts_guard.iter().map(|(k, v)| (k.url.clone(), v.load(Ordering::Relaxed))).collect::<Vec<_>>());*/
         let arc_backend = Arc::new(selected.clone());
         let entry = counts_guard.entry(arc_backend).or_insert_with(|| AtomicU32::new(0));
         entry.fetch_add(1, Ordering::SeqCst);

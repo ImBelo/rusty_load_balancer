@@ -35,7 +35,7 @@ pub async fn forward_request(
     // Ricostruisci la request
     let backend_req = Request::from_parts(parts, body);
 
-    //info!("Forwarding request to backend: {} {}", backend_req.method(), backend_req.uri());
+    info!("Forwarding request to backend: {} {}", backend_req.method(), backend_req.uri());
 
     // Inoltra la request e attendi risposta
     let backend_response = client.request(backend_req).await
@@ -59,8 +59,8 @@ async fn compress_response_adaptive(
         .and_then(|ct| ct.to_str().ok())
         .unwrap_or("unknown");
 
-    //info!("Compression check - Content-Type: {}, Accept-Encoding: {:?}", 
-    //      content_type, accept_encoding);
+    info!("Compression check - Content-Type: {}, Accept-Encoding: {:?}", 
+          content_type, accept_encoding);
     // 1. Controlla se il content-type è comprimibile
     if !should_compress(&response) {
         return Ok(response);
@@ -108,7 +108,6 @@ fn should_compress(response: &Response<hyper::Body>) -> bool {
         true
     }
 }
-
 
 async fn compress_gzip(response: Response<hyper::Body>) -> Result<Response<hyper::Body>> {
     let (mut parts, body) = response.into_parts();
