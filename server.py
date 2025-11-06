@@ -66,7 +66,7 @@ class HeaderInspectorHandler(BaseHTTPRequestHandler):
                 <p>Client: <span class="client">{self.client_address}</span></p>
             </div>
             
-            <h3>📋 Headers Ricevuti:</h3>
+            <h3>Headers Ricevuti:</h3>
             <div id="headers">
         """
         

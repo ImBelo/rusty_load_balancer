@@ -10,11 +10,14 @@ use std::task::{Context, Poll};
 use hyper::Client;
 use tracing::{info, error};
 use crate::backend::Backend;
+use tokio::sync::Semaphore;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ProxyHandler {
     pub backend_pool: BackendPool,
     pub http_client: Client<hyper::client::HttpConnector>,
+    pub concurrency_limiter: Arc<Semaphore>, 
 }
 
 impl ProxyHandler {
@@ -23,10 +26,17 @@ impl ProxyHandler {
             .pool_idle_timeout(Duration::from_secs(30))
             .build_http();
 
-        Self { backend_pool, http_client }
+
+        Self { 
+            backend_pool,
+            http_client,
+            concurrency_limiter: Arc::new(Semaphore::new(100)), 
+        }
     }
 
     pub async fn handle_request(&self, req: Request<hyper::Body>) -> Result<Response<hyper::Body>, Infallible> {
+        // solo 100 permessi
+        let _permit = self.concurrency_limiter.acquire().await.unwrap();
         // Se é una richiesta di healthcheck
         if req.uri().path().starts_with("/health/") {
             return self.handle_health_check(req).await;
@@ -47,9 +57,9 @@ impl ProxyHandler {
             }
         };
         // Hardcoded backend-1 1 secondo di risposta per testare algoritmo di least-connection
-        if backend.url ==  "http://127.0.0.1:8081" {
+        /*if backend.url ==  "http://127.0.0.1:8081" {
             backend.simulate_delay().await;
-        }
+        }*/
         // Fai il forward della richiesta e aggiungi header e in caso compremi
         let forward = match forward_request(req, &backend, &self.http_client).await {
             Ok(resp) => resp,

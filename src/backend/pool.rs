@@ -64,7 +64,6 @@ impl BackendPool {
             return None;
         }
 
-
         let selected = match self.strategy {
             LoadBalancingStrategy::RoundRobin => self.round_robin_select(&healthy).await,
             LoadBalancingStrategy::LeastConnections => self.least_connections_select(&healthy).await,
