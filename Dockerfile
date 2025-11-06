@@ -27,4 +27,4 @@ RUN mkdir -p config && \
 
 EXPOSE 3000 8081 8082 8083
 
-CMD ["bash", "-c", "python3 -m http.server 8081 --directory /app/backend1 & python3 -m http.server 8082 --directory /app/backend2 & python3 -m http.server 8083 --directory /app/backend3 & ./target/release/load-balancer-rs"]
+CMD ["bash", "-c", "python3 -m server 8081 --directory /app/backend1 & python3 -m server 8082 --directory /app/backend2 & python3 -m server 8083 --directory /app/backend3 & ./target/release/load-balancer-rs"]

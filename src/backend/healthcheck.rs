@@ -76,9 +76,12 @@ impl HealthCheck {
         }
     }
 
-    // Helper function that doesn't borrow self
     async fn check_single_backend(client: &Client, backend: &Backend) -> BackendStatus {
-        let health_url = format!("{}/", backend.url);
+        // Use the load balancer URL instead of backend URL directly
+        let load_balancer_url = "http://127.0.0.1:3000";
+
+        // Add a special header or path to identify health checks
+        let health_url = format!("{}/health/{}", load_balancer_url, backend.name);
 
         match client.get(&health_url).send().await {
             Ok(response) if response.status().is_success() => BackendStatus::Healthy,

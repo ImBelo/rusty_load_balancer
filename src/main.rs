@@ -20,9 +20,7 @@ async fn main() -> Result<()> {
         }
     };
 
-
-    
-    // Create and start load balancer
+    // Crea e inzia load balancer
     let lb = LoadBalancer::new(config).await?;
     lb.start().await?;
 

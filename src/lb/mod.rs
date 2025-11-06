@@ -2,6 +2,7 @@ pub mod algorithms;
 use crate::backend::{BackendPool, HealthCheck, LoadBalancingStrategy};
 use crate::proxy::ProxyHandler;
 use crate::config::Config;
+use hyper::service::Service;
 use hyper::Server;
 use std::net::SocketAddr;
 use tracing::{info, error};
@@ -65,32 +66,37 @@ impl LoadBalancer {
             .parse()
             .expect("Invalid host/port configuration");
 
-        let proxy_handler = ProxyHandler::new(self.backend_pool.clone());
 
-        // Usa make_service per creare un service per ogni connessione
-        let make_service = hyper::service::make_service_fn(|_conn| {
-            let handler = proxy_handler.clone();
+        let make_service = hyper::service::make_service_fn(|conn: &hyper::server::conn::AddrStream| {
+            let remote_addr = conn.remote_addr();
+            let backend_pool = self.backend_pool.clone();
+
             async move {
-                Ok::<_, hyper::Error>(handler)
+                Ok::<_, hyper::Error>(hyper::service::service_fn(move |mut req: hyper::Request<hyper::Body>| {
+                    req.extensions_mut().insert(remote_addr);
+
+                    let mut handler = ProxyHandler::new(backend_pool.clone());
+                    handler.call(req)
+                }))
             }
         });
 
         let server = Server::bind(&addr).serve(make_service);
 
-        info!("🚀 Load Balancer running on http://{}", addr);
-        info!("📊 Load balancing strategy: {:?}", self.backend_pool.strategy);
-        info!("🔍 Health check interval: {}s", self.config.health_check_interval);
+        info!("Load Balancer running on http://{}", addr);
+        info!("Load balancing strategy: {:?}", self.backend_pool.strategy);
+        info!("Health check interval: {}s", self.config.health_check_interval);
 
         let backends = self.backend_pool.backends.load();
         for backend in backends.iter() {
-            info!("🎯 Backend: {} -> {}", backend.name, backend.url);
+            info!("Backend: {} -> {}", backend.name, backend.url);
         }
 
         match server.await {
             Ok(_) => Ok(()),
             Err(e) => {
                 error!("Server error: {}", e);
-                Err(anyhow::anyhow!("Server error: {}", e))
+                Err(anyhow::anyhow!("Server error: {e}"))
             }
         }
     }

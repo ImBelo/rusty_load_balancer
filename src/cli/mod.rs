@@ -7,11 +7,11 @@ use crate::config::Config;
 #[command(about = "A high-performance load balancer written in Rust")]
 #[command(version = "1.0")]
 pub struct Cli {
-    /// Configuration file path
+    /// Path Config 
     #[arg(short, long, default_value = "config/config.yaml")]
     pub config: String,
 
-    /// Host to bind to
+    /// Host 
     #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
 
@@ -19,11 +19,11 @@ pub struct Cli {
     #[arg(short, long, default_value_t = 3000)]
     pub port: u16,
 
-    /// Load balancing strategy
+    /// Load balancer algoritmo
     #[arg(long, default_value = "round_robin")]
     pub strategy: String,
 
-    /// Health check interval in seconds
+    /// Intervallo Health check in secondi
     #[arg(long, default_value_t = 10)]
     pub health_check_interval: u64,
 }
@@ -32,10 +32,10 @@ impl Cli {
     pub fn parse() -> Config {
         let cli = Self::parse_args();
         
-        // Try to load from config file, fallback to CLI args
+        // Prova a caricare da file se no da CLI args
         match Config::from_file(&cli.config) {
             Ok(mut config) => {
-                // Override with CLI args if provided
+                // Fai Override con CLI args se dati
                 if cli.host != "127.0.0.1" {
                     config.host = cli.host;
                 }
@@ -51,7 +51,6 @@ impl Cli {
                 config
             }
             Err(_) => {
-                // Use CLI args to create config
                 Config {
                     host: cli.host,
                     port: cli.port,

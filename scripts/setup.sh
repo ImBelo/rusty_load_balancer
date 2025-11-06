@@ -1,10 +1,13 @@
 #!/bin/bash
+LOG_DIR="./logs"
+mkdir -p $LOG_DIR
 
 # Funzione di cleanup
 cleanup() {
     echo " Stopping all servers..."
-    pkill -f "python3 -m http.server" 2>/dev/null || true
-    pkill -f "load-balancer-rs" 2>/dev/null || true
+    killall python3 2>/dev/null || true
+    pkill -f "load-balancer-rs" 2>/dev/null 
+    rm -rf logs/
     exit 0
 }
 
@@ -12,29 +15,19 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 echo "Starting backend servers..."
-
-pkill -f "python3 -m http.server" 2>/dev/null || true
+killall python3 2>/dev/null || true
 sleep 2
 
-mkdir -p /tmp/backend1 /tmp/backend2 /tmp/backend3
+python3 -m server 8081 > "$LOG_DIR/backend_8081.log" 2>&1 &
 
-echo "<h1>Backend 1 - Server 8081</h1>" > /tmp/backend1/index.html
-echo "<h1>Backend 2 - Server 8082</h1>" > /tmp/backend2/index.html  
-echo "<h1>Backend 3 - Server 8083</h1>" > /tmp/backend3/index.html
+python3 -m server 8082 > "$LOG_DIR/backend_8082.log" 2>&1 &
 
-# Facciamo partire i server
-python3 -m http.server 8081 --directory /tmp/backend1 &
-SERVER1_PID=$!
+python3 -m server 8083 > "$LOG_DIR/backend_8083.log" 2>&1 & 
 
-python3 -m http.server 8082 --directory /tmp/backend2 &
-SERVER2_PID=$!
-
-python3 -m http.server 8083 --directory /tmp/backend3 &
-SERVER3_PID=$!
+sleep 2
 
 echo "Starting Load Balancer..."
-cargo run &
-LB_PID=$!
+cargo run --release &
 
 echo "All services started. Press Ctrl+C to stop everything."
 

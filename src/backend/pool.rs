@@ -73,13 +73,14 @@ impl BackendPool {
         }?;
 
         let mut counts_guard = self.connections_counts.write().await;
+        //println!("Current counts: {:?}", 
+        //counts_guard.iter().map(|(k, v)| (k.url.clone(), v.load(Ordering::Relaxed))).collect::<Vec<_>>());
         let arc_backend = Arc::new(selected.clone());
         let entry = counts_guard.entry(arc_backend).or_insert_with(|| AtomicU32::new(0));
         entry.fetch_add(1, Ordering::SeqCst);
 
         Some(selected)
     }
-
 
     pub async fn decrement_connections(&self, backend: &Backend) {
         let counts = self.connections_counts.read().await;
@@ -104,6 +105,14 @@ impl BackendPool {
         counts.get(backend)
             .map(|atomic| atomic.load(std::sync::atomic::Ordering::Relaxed))
             .unwrap_or(0)
+    }
+
+    pub async fn get_backend_by_name(&self, name: &str) -> Option<Backend> {
+        let backends = self.backends.load();
+        backends
+            .iter()
+            .find(|backend| backend.name == name)
+            .cloned()
     }
 
 }
