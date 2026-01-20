@@ -6,6 +6,15 @@ use hyper::service::Service;
 use hyper::Server;
 use std::net::SocketAddr;
 use tracing::{info, error};
+use std::fs::File;
+use std::io::BufReader;
+use std::sync::Arc;
+use tokio::net::TcpListener;
+use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
+use tokio_rustls::TlsAcceptor;
+use rustls_pemfile::{certs, pkcs8_private_keys};
+use std::result::Result::{Ok,Err};
+use anyhow::Context; // Questo risolve l'errore .context()
 
 pub struct LoadBalancer {
     config: Config,
@@ -51,7 +60,9 @@ impl LoadBalancer {
         info!("Starting Load Balancer...");
 
         self.start_health_checks().await;
-        self.start_http_server().await?;
+        let http_server = self.start_http_server();
+        let https_server = self.start_https_server();
+        tokio::join!(http_server,https_server);
 
         Ok(())
     }
@@ -104,6 +115,71 @@ impl LoadBalancer {
                 error!("Server error: {}", e);
                 Err(anyhow::anyhow!("Server error: {e}"))
             }
+        }
+    }
+    async fn start_https_server(&self) -> anyhow::Result<()> {
+        // 1. Configura l'indirizzo (usa una porta diversa, es: 3443)
+        let https_port = self.config.port + 443; // Esempio: 3000 + 443 = 3443
+        let addr: SocketAddr = format!("{}:{}", self.config.host, https_port).parse()?;
+
+        // 2. Carica il Certificato e la Chiave Privata
+        let cert_file = File::open("cert.pem")
+            .context("File cert.pem non trovato. Generalo con openssl.")?;
+        let key_file = File::open("key.pem")
+            .context("File key.pem non trovato.")?;
+
+        let mut cert_reader = BufReader::new(cert_file);
+        let mut key_reader = BufReader::new(key_file);
+
+        let cert_chain = certs(&mut cert_reader)?
+            .into_iter()
+            .map(Certificate)
+            .collect();
+        
+        let mut keys = pkcs8_private_keys(&mut key_reader)?;
+        if keys.is_empty() {
+            return Err(anyhow::anyhow!("Nessuna chiave privata trovata in key.pem"));
+        }
+        let private_key = PrivateKey(keys.remove(0));
+
+        // 3. Configura Rustls per il server
+        let tls_config = ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(cert_chain, private_key)?;
+
+        let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+        let listener = TcpListener::bind(&addr).await?;
+
+        info!("HTTPS Server listening on https://{}", addr);
+
+        // 4. Loop di accettazione
+        loop {
+            let (stream, remote_addr) = listener.accept().await?;
+            let acceptor = acceptor.clone();
+            let backend_pool = self.backend_pool.clone();
+
+            tokio::spawn(async move {
+                // Esegue l'handshake TLS
+                match acceptor.accept(stream).await {
+                    Ok(tls_stream) => {
+                        // Configura il servizio Hyper sopra lo stream criptato
+                        let service = hyper::service::service_fn(move |mut req| {
+                            req.extensions_mut().insert(remote_addr);
+                            let mut handler = ProxyHandler::new(backend_pool.clone());
+                            async move { handler.call(req).await }
+                        });
+
+                        if let Err(err) = hyper::server::conn::Http::new()
+                            .serve_connection(tls_stream, service)
+                            .await 
+                        {
+                            error!("Errore nella connessione HTTPS: {:?}", err);
+                        }
+                    }
+                    Err(e) => error!("Errore handshake TLS: {:?}", e),
+                }
+            });
         }
     }
 

@@ -3,12 +3,20 @@ use crate::backend::*;
 
 impl BackendPool {
 
-    pub async fn round_robin_select(&self, healthy: &[(Backend, BackendStatus)]) -> Option<Backend> {
-        let mut index = self.current_index.write().await;
-        let selected = healthy.get(*index % healthy.len()).map(|(b, _)| b.clone()); 
-        *index = (*index + 1) % healthy.len();
-        selected
-    }
+pub async fn round_robin_select(&self, healthy: &[(Backend, BackendStatus)]) -> Option<Backend> {
+    if healthy.is_empty() { return None; }
+
+    let mut index_guard = self.current_index.write().await;
+    
+    // Calcoliamo l'indice in base alla lunghezza attuale dei sani
+    let pos = *index_guard % healthy.len();
+    let selected = healthy.get(pos).map(|(b, _)| b.clone());
+    
+    // Incrementiamo l'indice in modo circolare
+    *index_guard = (pos + 1) % healthy.len();
+    
+    selected
+}
 
     pub async fn least_connections_select(&self, healthy: &[(Backend, BackendStatus)]) -> Option<Backend> {
         let counts = self.connections_counts.read().await;
@@ -23,14 +31,15 @@ impl BackendPool {
             .0.clone();
 
         // INCREMENTA le connessioni per il backend selezionato
-        drop(counts);  // Rilascia il read lock
-
+        drop(counts);
         Some(selected)
     }
 
     pub async fn weighted_round_robin_select(&self, healthy: &[(Backend, BackendStatus)]) -> Option<Backend> {
-        
+        if healthy.is_empty() { return None; }
+
         let mut state = self.weighted_rr_state.write().await;
+        state.expanded_list.clear();
         
         if state.expanded_list.is_empty() {
             for (backend, _) in healthy {

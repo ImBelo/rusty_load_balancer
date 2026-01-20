@@ -12,20 +12,30 @@ use tracing::{info, error};
 use crate::backend::Backend;
 use tokio::sync::Semaphore;
 use std::sync::Arc;
+use hyper_rustls::HttpsConnector;
+use hyper::client::HttpConnector;
+
+// Definiamo un tipo per chiarezza
+type ClientType = Client<HttpsConnector<HttpConnector>, hyper::Body>;
 
 #[derive(Clone)]
 pub struct ProxyHandler {
     pub backend_pool: BackendPool,
-    pub http_client: Client<hyper::client::HttpConnector>,
+    pub http_client: ClientType,
     pub concurrency_limiter: Arc<Semaphore>, 
 }
 
 impl ProxyHandler {
     pub fn new(backend_pool: BackendPool) -> Self {
+        let https = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .https_or_http()
+            .enable_http1()
+            .build();
+        // 2. Crea il client con il connettore HTTPS
         let http_client = Client::builder()
             .pool_idle_timeout(Duration::from_secs(30))
-            .build_http();
-
+            .build(https);
 
         Self { 
             backend_pool,

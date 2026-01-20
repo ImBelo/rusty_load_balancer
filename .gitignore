@@ -20,6 +20,7 @@ Thumbs.db
 # Ambiente
 .env
 .local
+key.pem
 
 # Backup
 *.backup

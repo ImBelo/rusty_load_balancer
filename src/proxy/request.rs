@@ -1,18 +1,26 @@
 use hyper::{Client, Request, Response};
+use hyper_rustls::HttpsConnector;
 use tracing::{info};
 use anyhow::{Context, Ok, Result};
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::io::Write;
 use crate::proxy::response::modify_response;
+use hyper::client::HttpConnector;
+use hyper::Uri;
+
+type CLientType = HttpsConnector<HttpConnector>;
 
 pub async fn forward_request(
     req: Request<hyper::Body>,
     backend: &crate::backend::server::Backend,
-    client: &Client<hyper::client::HttpConnector>,
+    client: &Client<CLientType>,
 ) -> Result<Response<hyper::Body>> {
-    let backend_uri = prepare_backend_uri(req.uri(), &backend.url);
-
+    // 1. Prepariamo l'URI del backend
+    let backend_uri_str = prepare_backend_uri(req.uri(), &backend.url);
+    let parsed_uri: Uri = backend_uri_str.parse()
+        .context("Failed to parse backend URI")?;
+    // 2. Salviamo i dati necessari prima di consumare la richiesta originale
     let accept_encoding = req.headers()
         .get("accept-encoding")
         .and_then(|h| h.to_str().ok())
@@ -23,30 +31,46 @@ pub async fn forward_request(
         .map(|addr| addr.ip().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
-    // Scomponi la request originale
+    // 3. Scomponiamo la richiesta originale (parts contiene gli headers)
     let (mut parts, body) = req.into_parts();
 
-    // Aggiorna l'URI
-    parts.uri = backend_uri.parse()
-        .context("Failed to parse backend URI")?;
+    // 4. Aggiorniamo l'URI della richiesta verso il backend
+    parts.uri = parsed_uri.clone();
 
+    // 5. Fondamentale per HTTPS: Aggiorniamo l'header HOST 
+    // Deve corrispondere all'host del backend, non a quello del proxy
+    if let Some(host) = parsed_uri.host() {
+        let host_val = if let Some(port) = parsed_uri.port() {
+            format!("{}:{}", host, port)
+        } else {
+            host.to_string()
+        };
+        
+        if let std::result::Result::Ok(header_val) = host_val.parse() {
+            parts.headers.insert(hyper::header::HOST, header_val);
+        }
+    }
+
+    // 6. USIAMO IL TUO METODO per aggiungere/aggiornare gli headers di tracing
+    // Questo gestirà X-Forwarded-For, X-Real-IP, ecc.
     add_tracing_headers(&mut parts.headers, &client_ip);
-    
-    // Ricostruisci la request
+
+    // 7. Ricostruiamo la richiesta per il backend
     let backend_req = Request::from_parts(parts, body);
 
-    info!("Forwarding request to backend: {} {}", backend_req.method(), backend_req.uri());
+    info!("Forwarding request to: {}", backend_req.uri());
 
-    // Inoltra la request e attendi risposta
+    // 8. Esecuzione della chiamata al backend
     let backend_response = client.request(backend_req).await
         .context("Failed to forward request to backend")?;
 
+    // 9. Gestione della compressione adattiva della risposta
     let compressed_response = compress_response_adaptive(backend_response, accept_encoding.as_deref())
         .await
         .context("Response compression failed")?;
 
+    // 10. Modifiche finali (es. header di sicurezza) e ritorno
     Ok(modify_response(compressed_response))
-
 }
 
 async fn compress_response_adaptive(
@@ -157,28 +181,28 @@ fn prepare_backend_uri(original_uri: &hyper::Uri, backend_url: &str) -> String {
 }
 
 fn add_tracing_headers(headers: &mut hyper::HeaderMap, client_ip: &str) {
-    headers.insert("X-Forwarded-By", "rust-load-balancer".parse().unwrap());
-    
-    match headers.get("X-Forwarded-For") {
-        Some(existing) => {
-            let mut new_chain = existing.to_str().unwrap_or("").to_string();
-            if !new_chain.is_empty() {
-                new_chain.push_str(", ");
-            }
-            new_chain.push_str(client_ip);
-            headers.insert("X-Forwarded-For", new_chain.parse().unwrap());
+    // Usiamo HeaderValue::from_static o gestiamo l'errore per evitare panic
+    headers.insert("X-Forwarded-By", hyper::header::HeaderValue::from_static("rust-load-balancer"));
+
+    // Gestione X-Forwarded-For (concatenazione catena proxy)
+    let new_xff = if let Some(existing) = headers.get("X-Forwarded-For") {
+        if let std::result::Result::Ok(existing_str) = existing.to_str() {
+            format!("{}, {}", existing_str, client_ip)
+        } else {
+            client_ip.to_string()
         }
-        None => {
-            headers.insert("X-Forwarded-For", client_ip.parse().unwrap());
-        }
+    } else {
+        client_ip.to_string()
+    };
+
+    if let std::result::Result::Ok(val) = new_xff.parse() {
+        headers.insert("X-Forwarded-For", val);
     }
-    
-    if !headers.contains_key("X-Forwarded-Proto") {
-        headers.insert("X-Forwarded-Proto", "http".parse().unwrap());
-    }
-    
-    if !headers.contains_key("X-Real-IP") {
-        headers.insert("X-Real-IP", client_ip.parse().unwrap());
-    }
+
+    // Imposta il protocollo (se non presente)
+    headers.entry("X-Forwarded-Proto").or_insert_with(|| "http".parse().unwrap());
+
+    // Imposta l'IP reale (se non presente)
+    headers.entry("X-Real-IP").or_insert_with(|| client_ip.parse().unwrap());
 }
 
