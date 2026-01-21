@@ -14,7 +14,7 @@ use tokio_rustls::rustls::{Certificate, PrivateKey, ServerConfig};
 use tokio_rustls::TlsAcceptor;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::result::Result::{Ok,Err};
-use anyhow::Context; // Questo risolve l'errore .context()
+use anyhow::Context; 
 
 pub struct LoadBalancer {
     config: Config,
@@ -62,7 +62,8 @@ impl LoadBalancer {
         self.start_health_checks().await;
         let http_server = self.start_http_server();
         let https_server = self.start_https_server();
-        tokio::join!(http_server,https_server);
+        tokio::try_join!(http_server,https_server)
+            .context("Critical failure in one of the server instances")?;
 
         Ok(())
     }

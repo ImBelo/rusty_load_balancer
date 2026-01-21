@@ -1,7 +1,8 @@
 use super::pool::BackendPool;
 use super::server::BackendStatus;
 use reqwest::Client;
-use std::time::Duration;
+use tokio::join;
+use std::{result, time::Duration};
 use tracing::{info, warn};
 use crate::backend::Backend;
 
@@ -44,37 +45,23 @@ impl HealthCheck {
     async fn check_all_backends(&self) {
         let backends = self.pool.backends.load();
 
-        let mut handles = Vec::new();
-
         for (index, backend) in backends.iter().enumerate() {
             let client = self.client.clone();
             let backend = backend.clone();
             let url = self.load_balancer_url.clone();
+            let pool = self.pool.clone();
 
-            let handle = tokio::spawn(async move {
+            tokio::spawn(async move {
                 let status = Self::check_single_backend(&client, &backend, url).await;
-                (index, backend, status)
+                // Update status and log
+                pool.update_backend_status(index, status).await;
+                match status {
+                    BackendStatus::Healthy => info!("Backend {} ({}) is healthy", backend.name, backend.url),
+                    BackendStatus::Unhealthy => warn!("Backend {} ({}) is unhealthy", backend.name, backend.url),
+                    BackendStatus::Unknown => warn!("Backend {} ({}) status unknown", backend.name, backend.url),
+                }
             });
 
-            handles.push(handle);
-        }
-    
-        for handle in handles {
-            let pool = self.pool.clone();
-            match handle.await {
-                Ok((index, backend, status)) => {
-                    pool.update_backend_status(index, status).await;
-
-                    match status {
-                        BackendStatus::Healthy => info!("Backend {} ({}) is healthy", backend.name, backend.url),
-                        BackendStatus::Unhealthy => warn!("Backend {} ({}) is unhealthy", backend.name, backend.url),
-                        BackendStatus::Unknown => warn!("Backend {} ({}) status unknown", backend.name, backend.url),
-                    }
-                }
-                Err(e) => {
-                    warn!("Health check task failed: {}", e);
-                }
-            }
         }
     }
 
