@@ -105,8 +105,10 @@ impl LoadBalancer {
         info!("Load balancing strategy: {:?}", self.backend_pool.strategy);
         info!("Health check interval: {}s", self.config.health_check_interval);
 
-        let backends = self.backend_pool.backends.load();
-        for backend in backends.iter() {
+        let states = self.backend_pool.state.load();
+        let backends = states.iter().map(|backend_state| backend_state.backend.clone());
+
+        for backend in backends {
             info!("Backend: {} -> {}", backend.name, backend.url);
         }
 

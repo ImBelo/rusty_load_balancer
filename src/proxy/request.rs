@@ -16,11 +16,10 @@ pub async fn forward_request(
     backend: &crate::backend::server::Backend,
     client: &Client<CLientType>,
 ) -> Result<Response<hyper::Body>> {
-    // 1. Prepariamo l'URI del backend
     let backend_uri_str = prepare_backend_uri(req.uri(), &backend.url);
     let parsed_uri: Uri = backend_uri_str.parse()
         .context("Failed to parse backend URI")?;
-    // 2. Salviamo i dati necessari prima di consumare la richiesta originale
+
     let accept_encoding = req.headers()
         .get("accept-encoding")
         .and_then(|h| h.to_str().ok())
@@ -31,14 +30,10 @@ pub async fn forward_request(
         .map(|addr| addr.ip().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
-    // 3. Scomponiamo la richiesta originale (parts contiene gli headers)
     let (mut parts, body) = req.into_parts();
 
-    // 4. Aggiorniamo l'URI della richiesta verso il backend
     parts.uri = parsed_uri.clone();
 
-    // 5. Fondamentale per HTTPS: Aggiorniamo l'header HOST 
-    // Deve corrispondere all'host del backend, non a quello del proxy
     if let Some(host) = parsed_uri.host() {
         let host_val = if let Some(port) = parsed_uri.port() {
             format!("{}:{}", host, port)
@@ -51,20 +46,15 @@ pub async fn forward_request(
         }
     }
 
-    // 6. USIAMO IL TUO METODO per aggiungere/aggiornare gli headers di tracing
-    // Questo gestirà X-Forwarded-For, X-Real-IP, ecc.
     add_tracing_headers(&mut parts.headers, &client_ip);
 
-    // 7. Ricostruiamo la richiesta per il backend
     let backend_req = Request::from_parts(parts, body);
 
     info!("Forwarding request to: {}", backend_req.uri());
 
-    // 8. Esecuzione della chiamata al backend
     let backend_response = client.request(backend_req).await
         .context("Failed to forward request to backend")?;
 
-    // 9. Gestione della compressione adattiva della risposta
     let compressed_response = compress_response_adaptive(backend_response, accept_encoding.as_deref())
         .await
         .context("Response compression failed")?;
@@ -85,12 +75,12 @@ async fn compress_response_adaptive(
 
     info!("Compression check - Content-Type: {}, Accept-Encoding: {:?}", 
           content_type, accept_encoding);
-    // 1. Controlla se il content-type è comprimibile
+    // Controlla se il content-type è comprimibile
     if !should_compress(&response) {
         return Ok(response);
     }
     
-    // 2. Scegli algoritmo di compressione
+    // Scegli algoritmo di compressione
     let algorithm = choose_compression_algorithm(accept_encoding);
     
     match algorithm {

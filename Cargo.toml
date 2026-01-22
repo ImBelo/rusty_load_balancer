@@ -20,3 +20,10 @@ hyper-rustls = { version = "0.24", features = ["http1", "tls12", "logging"] }
 rustls = "0.21"
 rustls-pemfile = "1.0"
 tokio-rustls = "0.24"
+
+# Dipendenze extra necessarie per lo script di TEST (load_test.rs)
+futures = "0.3"
+
+[[example]]
+name = "load_test"
+path = "examples/load_test.rs"

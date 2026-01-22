@@ -1,8 +1,7 @@
 use super::pool::BackendPool;
 use super::server::BackendStatus;
 use reqwest::Client;
-use tokio::join;
-use std::{result, time::Duration};
+use std::{time::Duration};
 use tracing::{info, warn};
 use crate::backend::Backend;
 
@@ -43,9 +42,10 @@ impl HealthCheck {
     }
 
     async fn check_all_backends(&self) {
-        let backends = self.pool.backends.load();
+        let backends_status = self.pool.state.load();
+        let backends = backends_status.iter().map(|status| status.backend.clone()); 
 
-        for (index, backend) in backends.iter().enumerate() {
+        for (index, backend) in backends.enumerate() {
             let client = self.client.clone();
             let backend = backend.clone();
             let url = self.load_balancer_url.clone();

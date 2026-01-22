@@ -9,11 +9,12 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use hyper::Client;
 use tracing::{info, error};
-use crate::backend::Backend;
+use crate::backend::{Backend};
 use tokio::sync::Semaphore;
 use std::sync::Arc;
 use hyper_rustls::HttpsConnector;
 use hyper::client::HttpConnector;
+use std::sync::atomic::Ordering;
 
 // Definiamo un tipo per chiarezza
 type ClientType = Client<HttpsConnector<HttpConnector>, hyper::Body>;
@@ -40,12 +41,12 @@ impl ProxyHandler {
         Self { 
             backend_pool,
             http_client,
-            concurrency_limiter: Arc::new(Semaphore::new(100)), 
+            concurrency_limiter: Arc::new(Semaphore::new(500)), 
         }
     }
 
     pub async fn handle_request(&self, req: Request<hyper::Body>) -> Result<Response<hyper::Body>, Infallible> {
-        // solo 100 permessi
+        // solo 500 permessi
         let _permit = self.concurrency_limiter.acquire().await.unwrap();
         // Se é una richiesta di healthcheck
         if req.uri().path().starts_with("/health/") {
@@ -55,10 +56,10 @@ impl ProxyHandler {
         info!("Incoming request: {} {}", req.method(), req.uri());
 
         // Prendi il backend e incrementa le connessioni nel pool
-        let backend = match self.backend_pool.select_and_increment().await {
+        let backend_state = match self.backend_pool.select_and_increment().await {
             Some(backend) => {
-                info!("Selected backend: {}", backend.url);
-               // println!("INCREMENTED: {} (now: {})", backend.url, self.backend_pool.get_connection_count(&backend).await);
+                info!("Selected backend: {}", backend.backend.url);
+        println!("INCREMENTED: {} (now: {})", backend.backend.url, backend.connections.load(Ordering::Relaxed));
                 backend
             },
             None => {
@@ -67,17 +68,17 @@ impl ProxyHandler {
             }
         };
         // Hardcoded backend-1 1 secondo di risposta per testare algoritmo di least-connection
-        /*if backend.url ==  "http://127.0.0.1:8081" {
-            backend.simulate_delay().await;
-        }*/
+        //if backend_state.backend.url ==  "http://127.0.0.1:8081" {
+         //   backend_state.backend.simulate_delay().await;
+        //}
         // Fai il forward della richiesta e aggiungi header e in caso compremi
-        let forward = match forward_request(req, &backend, &self.http_client).await {
+        let forward = match forward_request(req, &backend_state.backend, &self.http_client).await {
             Ok(resp) => resp,
             Err(e) => handle_proxy_error(e)
         };
         // Dopo il forward decrementa le connessioni nel pool
-        self.backend_pool.decrement_connections(&backend).await;
-       // println!("DECREMENTED: {} (now: {})", backend.url, self.backend_pool.get_connection_count(&backend).await);
+        self.backend_pool.decrement_connections(&backend_state.backend.name).await;
+        println!("Decremeted: {} (now: {})", backend_state.backend.url, backend_state.connections.load(Ordering::Relaxed));
 
         Ok(forward)
 
@@ -89,7 +90,7 @@ impl ProxyHandler {
 
         if let Some(backend) = self.backend_pool.get_backend_by_name(backend_name).await {
             // Richiesta diretta per vedere se é healthy
-            let is_healthy = self.direct_health_check(&backend).await;
+            let is_healthy = self.direct_health_check(&backend.backend).await;
 
             let status = if is_healthy { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
             return Ok(Response::builder().status(status).body(hyper::Body::from("")).unwrap());

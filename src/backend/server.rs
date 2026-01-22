@@ -44,7 +44,7 @@ impl Backend {
     }
     pub async fn simulate_delay(&self) {
         println!("Backend {}: simulando ritardo di 1s", self.url);
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
     }
 
 }
